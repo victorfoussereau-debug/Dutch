@@ -716,9 +716,11 @@ function renderPrompt(r, myTurn, powerMine) {
       const msg = r.pending.type === 'peek'
         ? '<strong>Jack.</strong> Click any card on the table to look at it.'
         : (r.pending.picks === 0
-            ? '<strong>Queen.</strong> Click the first card to swap.'
+            ? '<strong>Queen.</strong> Click the first card to swap, or skip.'
             : '<strong>Queen.</strong> Now the second card. You will not see either.');
-      setPrompt(msg, []);
+      setPrompt(msg, r.pending.type === 'swap'
+        ? [{ label: "Don't swap", onClick: () => send({ t:'skipPower' }) }]
+        : []);
     } else {
       setPrompt(r.pending.type === 'swap' && r.pending.picks
         ? `${state.names[r.pending.owner]} picked a first card to swap, choosing the second.`
