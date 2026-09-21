@@ -116,6 +116,7 @@ function startRound(room) {
     result: null
   };
   room.log = [];
+  if (room.bot) { room.bot.mem = new Map(); room.bot.lastTop = null; room.bot.plan = null; room.bot.swapPlan = null; }
   pushLog(room, `Round ${room.roundNo} dealt, ${n} cards each. ${seatName(room, first)} starts.`);
 }
 
@@ -228,7 +229,7 @@ function stateFor(room, seat) {
     code: room.code,
     you: seat,
     names: [seatName(room, 0), seatName(room, 1)],
-    connected: [!!(room.seats[0] && room.seats[0].ws), !!(room.seats[1] && room.seats[1].ws)],
+    connected: [0, 1].map(i => !!(room.seats[i] && (room.seats[i].ws || room.seats[i].bot))),
     scores: room.scores,
     history: room.history,
     cardsPerPlayer: room.cardsPerPlayer,
@@ -272,6 +273,7 @@ function broadcast(room) {
 }
 
 function reveal(room, seat, entries, ms) {
+  if (room.bot && room.bot.seat === seat) { for (const e of entries) botLearn(room, e.card); return; }
   const p = room.seats[seat];
   if (p && p.ws) send(p.ws, { type: 'reveal', cards: entries, ms: ms || 7000 });
 }
@@ -367,6 +369,8 @@ function handle(room, seat, msg) {
       const pen = drawFromDeck(room);
       if (pen) r.lines[seat].push(pen);
       pushLog(room, `${seatName(room, seat)} slapped a ${f.card.rank} by mistake and takes a penalty card.`);
+      pushFx(room, { kind: 'badslap', by: seat, card: publicCard(f.card) });
+      botObserve(room, seat, f.card);
     }
     return;
   }
@@ -433,6 +437,7 @@ function handle(room, seat, msg) {
     if (r.phase !== 'idle' || !r.discard.length) return;
     r.drawn = r.discard.pop(); r.drawnSource = 'discard'; r.phase = 'drawn';
     pushLog(room, `${seatName(room, seat)} took the ${r.drawn.rank} from the discard pile.`);
+    botObserve(room, seat, r.drawn);
     return;
   }
 
@@ -479,6 +484,229 @@ function resumeAfterPower(room, seat, pend) {
   afterAction(room, seat);
 }
 
+/* --------------------------------------------------------------------- bot */
+
+// The bot only ever uses what a human in its seat could know: its peeks,
+// its draws, its Jack reveals, and public events (cards taken from the
+// discard, wrong slaps). Card identities are tracked by uid, so a card it
+// knows stays known when it is swapped around.
+const LEVELS = {
+  easy:     { label: 'Easy',     forget: 0.15, trackOpp: 0,   err: 0.33, slap: 0.4,  slapMs: [2600, 4500], wrongSlap: 0.10, think: [1300, 2200] },
+  medium:   { label: 'Medium',   forget: 0.05, trackOpp: 0,   err: 0.14, slap: 0.7,  slapMs: [1800, 3000], wrongSlap: 0.03, think: [1100, 1800] },
+  hard:     { label: 'Hard',     forget: 0.03, trackOpp: 0.5, err: 0.07, slap: 0.9,  slapMs: [1200, 2100], wrongSlap: 0.01, think: [950, 1600] },
+  ultimate: { label: 'Ultimate', forget: 0,    trackOpp: 1,   err: 0,    slap: 1,    slapMs: [600, 1000],  wrongSlap: 0,    think: [850, 1300] }
+};
+const OWN_UNKNOWN = 6.2;   // average card value in the deck
+const OPP_UNKNOWN = 4.5;   // players improve their hands, so assume better than average
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const chance = p => Math.random() < p;
+const pickOne = a => a[Math.floor(Math.random() * a.length)];
+
+function botLearn(room, card) {
+  const b = room.bot;
+  if (b && card) b.mem.set(card.uid, { rank: card.rank, suit: card.suit, value: cardValue(card) });
+}
+
+function botObserve(room, actor, card) {
+  const b = room.bot;
+  if (!b || actor === b.seat) return;
+  if (chance(LEVELS[b.level].trackOpp)) botLearn(room, card);
+}
+
+function known(b, c) { return b.mem.get(c.uid) || null; }
+function estOwn(b, c) { const k = known(b, c); return k ? k.value : OWN_UNKNOWN; }
+function estOpp(b, c) { const k = known(b, c); return k ? k.value : OPP_UNKNOWN; }
+
+// the slot the bot most wants to get rid of: highest known value, else an unknown
+function worstSlot(b, line) {
+  let best = null, bestV = -Infinity;
+  for (const c of line) {
+    const v = estOwn(b, c) + (known(b, c) ? 0.01 : 0);
+    if (v > bestV) { bestV = v; best = c; }
+  }
+  return best;
+}
+
+function apply(room, seat, msg) {
+  try { handle(room, seat, msg); } catch (e) { console.error(e); }
+  flushFx(room);
+  broadcast(room);
+  botTick(room);
+}
+
+function botTick(room) {
+  const b = room.bot, r = room.round;
+  if (!b || !r || r.over) return;
+  const me = b.seat;
+
+  const top = r.discard[r.discard.length - 1];
+  if (top && top.uid !== b.lastTop) { b.lastTop = top.uid; planSlaps(room, top); }
+
+  if (b.timer) return;
+  const needs =
+    (r.phase === 'peek' && !r.peekDone[me]) ||
+    (r.phase === 'power' && r.pending && r.pending.owner === me) ||
+    (r.phase === 'dutch_offer' && r.offerTo === me) ||
+    ((r.phase === 'idle' || r.phase === 'drawn') && r.turn === me);
+  if (!needs) return;
+
+  const L = LEVELS[b.level];
+  // leave time for the swap animation on the human's screen
+  const extra = r.phase === 'power' ? 600 : 0;
+  b.timer = setTimeout(() => {
+    b.timer = null;
+    try { botAct(room); } catch (e) { console.error(e); }
+  }, rnd(L.think[0], L.think[1]) + extra);
+}
+
+function planSlaps(room, top) {
+  const b = room.bot, r = room.round, me = b.seat, L = LEVELS[b.level];
+  const fire = (uid, delay, mustMatch) => setTimeout(() => {
+    const rr = room.round;
+    if (rr !== r || rr.over || !['idle', 'drawn', 'dutch_offer'].includes(rr.phase)) return;
+    const t = rr.discard[rr.discard.length - 1];
+    if (!t || (mustMatch && t.rank !== top.rank)) return;
+    if (!rr.lines[me].some(c => c.uid === uid)) return;
+    apply(room, me, { t: 'slap', uid });
+  }, delay);
+
+  const matches = r.lines[me].filter(c => { const k = known(b, c); return k && k.rank === top.rank; });
+  matches.forEach((c, i) => {
+    if (chance(L.slap)) fire(c.uid, rnd(L.slapMs[0], L.slapMs[1]) + i * 450, true);
+  });
+  if (!matches.length && chance(L.wrongSlap)) {
+    const unknown = r.lines[me].filter(c => !known(b, c));
+    if (unknown.length) fire(pickOne(unknown).uid, rnd(L.slapMs[0], L.slapMs[1]), true);
+  }
+}
+
+function botAct(room) {
+  const b = room.bot, r = room.round;
+  if (!b || !r || r.over) return;
+  const me = b.seat, opp = other(me), L = LEVELS[b.level];
+  const line = r.lines[me];
+
+  /* opening peek */
+  if (r.phase === 'peek' && !r.peekDone[me]) {
+    return apply(room, me, { t: 'peek', uids: line.slice(0, 2).map(c => c.uid) });
+  }
+
+  /* powers */
+  if (r.phase === 'power' && r.pending && r.pending.owner === me) {
+    const pend = r.pending;
+    if (pend.type === 'peek') {
+      const ownUnknown = line.filter(c => !known(b, c));
+      const oppUnknown = r.lines[opp].filter(c => !known(b, c));
+      let target;
+      if (chance(L.err)) {
+        const all = [...line.map(c => [me, c]), ...r.lines[opp].map(c => [opp, c])];
+        target = pickOne(all);
+      } else if (ownUnknown.length) target = [me, pickOne(ownUnknown)];
+      else if (oppUnknown.length) target = [opp, pickOne(oppUnknown)];
+      else target = [opp, pickOne(r.lines[opp])];
+      return apply(room, me, { t: 'power', seat: target[0], uid: target[1].uid });
+    }
+    if (pend.type === 'swap') {
+      if (pend.picks.length === 0) {
+        b.swapPlan = planSwap(room);
+        if (!b.swapPlan) return apply(room, me, { t: 'skipPower' });
+        return apply(room, me, { t: 'power', seat: b.swapPlan[0][0], uid: b.swapPlan[0][1] });
+      }
+      const second = b.swapPlan ? b.swapPlan[1] : [opp, pickOne(r.lines[opp]).uid];
+      b.swapPlan = null;
+      return apply(room, me, { t: 'power', seat: second[0], uid: second[1] });
+    }
+    return;
+  }
+
+  /* end of turn */
+  if (r.phase === 'dutch_offer' && r.offerTo === me) {
+    return apply(room, me, { t: shouldCallDutch(room) ? 'dutch' : 'pass' });
+  }
+
+  if (r.turn !== me) return;
+
+  /* start of turn: draw */
+  if (r.phase === 'idle') {
+    for (const uid of [...b.mem.keys()]) if (chance(L.forget)) b.mem.delete(uid);
+    const top = r.discard[r.discard.length - 1];
+    const worst = worstSlot(b, line);
+    b.plan = null;
+    if (top && worst) {
+      const good = cardValue(top) <= 5 && cardValue(top) < estOwn(b, worst) - 1.5;
+      if (chance(L.err) ? chance(0.25) : good) {
+        b.plan = worst.uid;
+        return apply(room, me, { t: 'takeDiscard' });
+      }
+    }
+    return apply(room, me, { t: 'drawDeck' });
+  }
+
+  /* holding a card */
+  if (r.phase === 'drawn' && r.drawn) {
+    const d = r.drawn;
+    botLearn(room, d);
+    const dv = cardValue(d);
+
+    if (r.drawnSource === 'discard') {
+      const slot = line.find(c => c.uid === b.plan) || worstSlot(b, line);
+      b.plan = null;
+      return apply(room, me, { t: 'place', uid: slot.uid });
+    }
+
+    if (chance(L.err)) {
+      if (chance(0.5)) return apply(room, me, { t: 'discardDrawn' });
+      return apply(room, me, { t: 'place', uid: pickOne(line).uid });
+    }
+
+    const worst = worstSlot(b, line);
+    const freshPower = cardPower(d) && !r.spent.has(d.uid);
+    const keep = worst && dv < estOwn(b, worst) - 0.5 && !(freshPower && dv >= 10);
+    if (keep) return apply(room, me, { t: 'place', uid: worst.uid });
+    return apply(room, me, { t: 'discardDrawn' });
+  }
+}
+
+// returns [[seat, uid], [seat, uid]] or null to skip the Queen
+function planSwap(room) {
+  const b = room.bot, r = room.round, me = b.seat, opp = other(me), L = LEVELS[b.level];
+  const mine = r.lines[me], theirs = r.lines[opp];
+
+  if (chance(L.err)) {
+    if (b.level === 'easy' && chance(0.4)) return null;
+    return [[me, pickOne(mine).uid], [opp, pickOne(theirs).uid]];
+  }
+
+  let high = null;
+  for (const c of mine) { const k = known(b, c); if (k && (!high || k.value > high.v)) high = { c, v: k.value }; }
+  if (!high || high.v < 8) return null;
+
+  let low = null;
+  for (const c of theirs) { const k = known(b, c); if (k && (!low || k.value < low.v)) low = { c, v: k.value }; }
+  if (low && low.v < high.v - 2) return [[me, high.c.uid], [opp, low.c.uid]];
+
+  const unknownTheirs = theirs.filter(c => !known(b, c));
+  if (high.v >= 9 && unknownTheirs.length) return [[me, high.c.uid], [opp, pickOne(unknownTheirs).uid]];
+  return null;
+}
+
+function shouldCallDutch(room) {
+  const b = room.bot, r = room.round, me = b.seat, opp = other(me);
+  const mine = r.lines[me];
+  const unknown = mine.filter(c => !known(b, c)).length;
+  const own = mine.reduce((t, c) => t + estOwn(b, c), 0);
+  const theirs = r.lines[opp].reduce((t, c) => t + estOpp(b, c), 0);
+
+  switch (b.level) {
+    case 'easy':     return (own <= 9 && chance(0.5)) || (own <= 15 && chance(0.06));
+    case 'medium':   return unknown <= 1 && own <= 6;
+    case 'hard':     return (unknown <= 1 && own <= 7 && own < theirs - 1) || (own <= 11 && chance(0.03));
+    case 'ultimate': return unknown === 0 && own <= 5 && own < theirs - 2;
+  }
+  return false;
+}
+
 /* ------------------------------------------------------------------ server */
 
 const MIME = {
@@ -511,11 +739,19 @@ wss.on('connection', ws => {
     try { msg = JSON.parse(raw); } catch { return; }
 
     if (msg.t === 'join') {
-      const code = String(msg.code || '').trim().toUpperCase().slice(0, 8);
-      if (!code) { send(ws, { type: 'error', message: 'Enter a room code.' }); return; }
-      const room = rooms.get(code) || makeRoom(code);
       const name = String(msg.name || '').trim().slice(0, 16) || 'Player';
       const token = String(msg.token || '') || crypto.randomBytes(12).toString('hex');
+      let code, room;
+      if (LEVELS[msg.bot]) {
+        do { code = 'BOT' + crypto.randomInt(1000, 10000); } while (rooms.has(code));
+        room = makeRoom(code);
+        room.seats[1] = { token: 'bot', name: `Bot (${LEVELS[msg.bot].label})`, ws: null, bot: true };
+        room.bot = { seat: 1, level: msg.bot, mem: new Map(), lastTop: null, timer: null, plan: null, swapPlan: null };
+      } else {
+        code = String(msg.code || '').trim().toUpperCase().slice(0, 8);
+        if (!code) { send(ws, { type: 'error', message: 'Enter a room code.' }); return; }
+        room = rooms.get(code) || makeRoom(code);
+      }
 
       let seat = seatOf(room, token);
       if (seat === -1) {
@@ -536,9 +772,7 @@ wss.on('connection', ws => {
 
     const room = ws.room;
     if (!room || ws.seat === undefined) return;
-    try { handle(room, ws.seat, msg); } catch (e) { console.error(e); }
-    flushFx(room);
-    broadcast(room);
+    apply(room, ws.seat, msg);
   });
 
   ws.on('close', () => {
