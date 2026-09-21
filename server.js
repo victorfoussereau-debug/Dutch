@@ -371,6 +371,16 @@ function handle(room, seat, msg) {
     return;
   }
 
+  /* ---- optional queen: the owner may decline the swap ---- */
+  if (msg.t === 'skipPower') {
+    if (r.phase !== 'power' || !r.pending || r.pending.owner !== seat || r.pending.type !== 'swap') return;
+    const pend = r.pending;
+    r.pending = null;
+    pushLog(room, `${seatName(room, seat)} chose not to swap.`);
+    resumeAfterPower(room, seat, pend);
+    return;
+  }
+
   /* ---- power resolution ---- */
   if (msg.t === 'power') {
     if (r.phase !== 'power' || !r.pending || r.pending.owner !== seat) return;
