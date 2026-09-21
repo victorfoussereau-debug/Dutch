@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dutch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --table:#0F231E;
+  --felt:#16332B;
+  --felt-2:#1D4038;
+  --paper:#F3EEE2;
+  --ink:#152420;
+  --red:#C0433A;
+  --amber:#E3A73C;
+  --coral:#E4572E;
+  --mute:#7E9A91;
+  --line:#26493F;
+  --r:10px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--table);color:#DCE9E4;
+  font-family:Figtree,system-ui,sans-serif;font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;cursor:pointer;border:none;border-radius:var(--r)}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,.card:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.btn{background:var(--felt-2);color:#DCE9E4;padding:.55rem 1rem;border:1px solid var(--line)}
+.btn:hover:not(:disabled){background:#27544A}
+.btn-primary{background:var(--amber);color:#2A1C05;border-color:transparent;font-weight:700}
+.btn-primary:hover:not(:disabled){background:#EFB955}
+.btn-call{background:var(--coral);color:#fff;border-color:transparent;font-weight:700}
+.btn-call:hover:not(:disabled){background:#F06B44}
+.btn-armed{background:var(--coral);color:#fff;border-color:transparent}
+
+/* ---------- join ---------- */
+#join{min-height:100%;display:grid;place-items:center;padding:2rem}
+.join-box{width:min(380px,100%)}
+.wordmark{font-family:'Instrument Serif',serif;font-size:4.5rem;line-height:.95;margin:0 0 .25rem}
+.wordmark em{font-style:italic;color:var(--amber)}
+.tag{color:var(--mute);margin:0 0 2rem}
+label{display:block;font-size:.82rem;color:var(--mute);margin:1rem 0 .3rem}
+input{
+  width:100%;padding:.65rem .8rem;border-radius:var(--r);
+  background:var(--felt);border:1px solid var(--line);color:#DCE9E4;font:inherit;
+}
+input:focus{outline:2px solid var(--amber);outline-offset:1px}
+#joinBtn{width:100%;margin-top:1.5rem;padding:.7rem}
+.err{color:var(--coral);min-height:1.4em;font-size:.88rem;margin-top:.6rem}
+
+/* ---------- table ---------- */
+#game{display:none;min-height:100%;flex-direction:column}
+#game.on{display:flex}
+header{
+  display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;
+  padding:.7rem 1.1rem;border-bottom:1px solid var(--line);
+}
+header h1{font-family:'Instrument Serif',serif;font-weight:400;font-size:1.6rem;margin:0}
+.room{color:var(--mute);font-size:.85rem}
+.score{margin-left:auto;display:flex;align-items:center;gap:.8rem}
+.pill{display:flex;align-items:baseline;gap:.45rem;background:var(--felt);border:1px solid var(--line);padding:.3rem .7rem;border-radius:99px}
+.pill b{font-size:1.15rem}
+.pill.on{border-color:var(--amber)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.dot.live{background:#4FBE8F}
+
+main{flex:1;display:grid;grid-template-columns:1fr 290px;gap:1.2rem;padding:1.1rem;align-items:start}
+.table{display:flex;flex-direction:column;gap:.9rem;min-width:0}
+.zone{background:var(--felt);border:1px solid var(--line);border-radius:14px;padding:.85rem 1rem}
+.zone.active{border-color:var(--amber)}
+.zone h2{font-size:.8rem;font-weight:500;color:var(--mute);margin:0 0 .6rem;display:flex;gap:.5rem;align-items:center}
+.zone h2 .turn{color:var(--amber)}
+.hand{display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* ---------- cards ---------- */
+.card{
+  width:62px;height:88px;border-radius:8px;position:relative;
+  background:var(--paper);color:var(--ink);border:none;padding:0;
+  font-family:Figtree,sans-serif;flex:0 0 auto;
+}
+.card .rk{position:absolute;top:5px;left:7px;font-weight:700;font-size:.95rem;line-height:1}
+.card .st{position:absolute;inset:0;display:grid;place-items:center;font-size:1.75rem}
+.card .pts{position:absolute;bottom:4px;right:6px;font-size:.7rem;color:#6B7D77}
+.card.red{color:var(--red)}
+.card.back{
+  background:
+    repeating-linear-gradient(45deg,#1F4A40 0 6px,#1B4238 6px 12px);
+  border:1px solid #2E5C50;
+}
+.card.pick{box-shadow:0 0 0 2px var(--amber)}
+.card.sel{box-shadow:0 0 0 2px var(--coral)}
+.card.clickable{cursor:pointer}
+.card.clickable:hover{transform:translateY(-4px)}
+.card{transition:transform .12s ease}
+.slot{width:62px;height:88px;border-radius:8px;border:1px dashed var(--line);display:grid;place-items:center;color:var(--mute);font-size:.75rem}
+
+.middle{display:flex;gap:1.6rem;align-items:center;flex-wrap:wrap}
+.stack{display:flex;flex-direction:column;align-items:center;gap:.4rem}
+.stack span{font-size:.75rem;color:var(--mute)}
+.drawn{border-left:1px solid var(--line);padding-left:1.6rem}
+
+.prompt{background:var(--felt-2);border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
+.prompt p{margin:0;flex:1 1 220px;min-width:0}
+.prompt strong{font-weight:700}
+
+aside{display:flex;flex-direction:column;gap:1rem;position:sticky;top:1.1rem}
+.panel{background:var(--felt);border:1px solid var(--line);border-radius:14px;padding:.85rem 1rem}
+.panel h3{font-size:.8rem;font-weight:500;color:var(--mute);margin:0 0 .55rem}
+#log{list-style:none;margin:0;padding:0;max-height:250px;overflow:auto;font-size:.85rem}
+#log li{padding:.22rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
+#log li:last-child{border:none;color:#fff}
+#hist{list-style:none;margin:0;padding:0;font-size:.85rem;max-height:150px;overflow:auto}
+#hist li{display:flex;justify-content:space-between;padding:.2rem 0}
+#hist span{color:var(--mute)}
+.setup{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.setup input{width:64px}
+.rules{font-size:.82rem;color:var(--mute)}
+.rules summary{cursor:pointer;color:#DCE9E4}
+.rules dl{margin:.6rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem}
+.rules dt{font-weight:700;color:#DCE9E4}
+.rules dd{margin:0}
+
+@media (max-width:860px){
+  main{grid-template-columns:1fr}
+  aside{position:static}
+  .wordmark{font-size:3.4rem}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<section id="join">
+  <div class="join-box">
+    <h1 class="wordmark">Dutch<em>.</em></h1>
+    <p class="tag">Two players, one room code. Lowest hand takes the round.</p>
+    <label for="name">Your name</label>
+    <input id="name" maxlength="16" placeholder="Victor" autocomplete="off">
+    <label for="code">Room code</label>
+    <input id="code" maxlength="8" placeholder="LILLE" autocomplete="off">
+    <button id="joinBtn" class="btn btn-primary">Join the room</button>
+    <p class="err" id="joinErr"></p>
+  </div>
+</section>
+
+<section id="game">
+  <header>
+    <h1>Dutch</h1>
+    <span class="room" id="roomLabel"></span>
+    <div class="score" id="scoreBar"></div>
+  </header>
+
+  <main>
+    <div class="table">
+      <div class="zone" id="oppZone">
+        <h2 id="oppTitle">Opponent</h2>
+        <div class="hand" id="oppHand"></div>
+      </div>
+
+      <div class="zone">
+        <div class="middle">
+          <div class="stack">
+            <button class="card back" id="deck" aria-label="Draw pile"></button>
+            <span id="deckCount">draw pile</span>
+          </div>
+          <div class="stack">
+            <div id="discardWrap"></div>
+            <span>discard</span>
+          </div>
+          <div class="stack drawn" id="drawnWrap"></div>
+        </div>
+      </div>
+
+      <div class="zone" id="youZone">
+        <h2 id="youTitle">You</h2>
+        <div class="hand" id="youHand"></div>
+      </div>
+
+      <div class="prompt" id="prompt"></div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <h3>Match</h3>
+        <ul id="hist"></ul>
+        <div class="setup" id="setup"></div>
+      </div>
+      <div class="panel">
+        <h3>What happened</h3>
+        <ul id="log"></ul>
+      </div>
+      <div class="panel rules">
+        <details>
+          <summary>Card values and powers</summary>
+          <dl>
+            <dt>Joker</dt><dd>minus 1</dd>
+            <dt>Red king</dt><dd>0</dd>
+            <dt>Black king</dt><dd>13</dd>
+            <dt>Ace</dt><dd>1</dd>
+            <dt>Jack / Queen</dt><dd>11 / 12</dd>
+            <dt>10</dt><dd>opponent takes an extra card</dd>
+            <dt>Jack</dt><dd>look at any card on the table</dd>
+            <dt>Queen</dt><dd>swap any two cards, blind</dd>
+          </dl>
+          <p>A power only fires when the card leaves the draw pile or a line, and only the first time that exact card hits the discard pile in a round.</p>
+        </details>
+      </div>
+    </aside>
+  </main>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const SUIT = { S:'\u2660', H:'\u2665', D:'\u2666', C:'\u2663', R:'\u2605', B:'\u2605' };
+const RED = new Set(['H','D','R']);
+
+let ws, state = null, me = 0, token = localStorage.getItem('dutch.token') || '';
+let revealed = new Map();      // uid -> card
+let peekPicks = [];
+let slapArmed = false;
+
+/* ---------------- connection ---------------- */
+
+$('#name').value = localStorage.getItem('dutch.name') || '';
+$('#code').value = localStorage.getItem('dutch.code') || '';
+$('#joinBtn').onclick = connect;
+$('#code').addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
+
+function connect() {
+  const name = $('#name').value.trim() || 'Player';
+  const code = $('#code').value.trim().toUpperCase();
+  if (!code) { $('#joinErr').textContent = 'Pick a room code and share it with your friend.'; return; }
+  localStorage.setItem('dutch.name', name);
+  localStorage.setItem('dutch.code', code);
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen = () => ws.send(JSON.stringify({ t:'join', code, name, token }));
+  ws.onmessage = e => onMessage(JSON.parse(e.data));
+  ws.onclose = () => { $('#joinErr').textContent = 'Connection lost. Reload to rejoin.'; };
+  ws.onerror = () => { $('#joinErr').textContent = 'Could not reach the server.'; };
+}
+
+function onMessage(m) {
+  if (m.type === 'error') { $('#joinErr').textContent = m.message; return; }
+  if (m.type === 'joined') {
+    token = m.token; me = m.seat;
+    localStorage.setItem('dutch.token', token);
+    $('#join').style.display = 'none';
+    $('#game').classList.add('on');
+    return;
+  }
+  if (m.type === 'reveal') {
+    for (const e of m.cards) {
+      revealed.set(e.uid, e.card);
+      setTimeout(() => { revealed.delete(e.uid); render(); }, m.ms);
+    }
+    render();
+    return;
+  }
+  if (m.type === 'state') { state = m; render(); }
+}
+
+const send = o => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+/* ---------------- rendering ---------------- */
+
+function cardEl(c, opts = {}) {
+  const b = document.createElement('button');
+  b.className = 'card';
+  b.type = 'button';
+  const face = c && c.rank ? c : revealed.get(c && c.uid);
+  if (face && face.rank) {
+    if (RED.has(face.suit)) b.classList.add('red');
+    const rk = document.createElement('span'); rk.className = 'rk';
+    rk.textContent = face.rank === 'JOKER' ? 'JKR' : face.rank;
+    const st = document.createElement('span'); st.className = 'st';
+    st.textContent = SUIT[face.suit] || '';
+    const pt = document.createElement('span'); pt.className = 'pts';
+    pt.textContent = face.value;
+    b.append(rk, st, pt);
+    b.setAttribute('aria-label', `${face.rank} of ${face.suit}, ${face.value} points`);
+  } else {
+    b.classList.add('back');
+    b.setAttribute('aria-label', 'face down card');
+  }
+  if (opts.pick) b.classList.add('pick');
+  if (opts.sel) b.classList.add('sel');
+  if (opts.onClick) {
+    b.classList.add('clickable');
+    b.onclick = opts.onClick;
+  } else {
+    b.disabled = true;
+  }
+  return b;
+}
+
+function render() {
+  if (!state) return;
+  const r = state.round;
+  const opp = me === 0 ? 1 : 0;
+
+  $('#roomLabel').textContent = `room ${state.code}`;
+
+  $('#scoreBar').innerHTML = '';
+  for (const s of [me, opp]) {
+    const p = document.createElement('div');
+    p.className = 'pill' + (r && !r.result && r.turn === s ? ' on' : '');
+    const d = document.createElement('span');
+    d.className = 'dot' + (state.connected[s] ? ' live' : '');
+    const n = document.createElement('span');
+    n.textContent = s === me ? 'You' : state.names[s];
+    const b = document.createElement('b');
+    b.textContent = state.scores[s];
+    p.append(d, n, b);
+    $('#scoreBar').append(p);
+  }
+
+  $('#hist').innerHTML = '';
+  if (!state.history.length) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span>No rounds played yet.</span>';
+    $('#hist').append(li);
+  }
+  for (const h of state.history) {
+    const li = document.createElement('li');
+    const a = document.createElement('span'); a.textContent = `Round ${h.round}`;
+    const b = document.createElement('span');
+    b.style.color = h.winner === me ? '#4FBE8F' : '#C0433A';
+    b.textContent = `${h.winner === me ? 'Won' : 'Lost'} ${h.sums[me]}-${h.sums[opp]}`;
+    li.append(a, b);
+    $('#hist').append(li);
+  }
+
+  $('#log').innerHTML = '';
+  for (const l of state.log) {
+    const li = document.createElement('li'); li.textContent = l; $('#log').append(li);
+  }
+  $('#log').scrollTop = $('#log').scrollHeight;
+
+  renderSetup();
+
+  if (!r) {
+    $('#oppHand').innerHTML = ''; $('#youHand').innerHTML = '';
+    $('#discardWrap').innerHTML = ''; $('#drawnWrap').innerHTML = '';
+    $('#deckCount').textContent = 'draw pile';
+    $('#deck').disabled = true;
+    $('#oppTitle').textContent = state.names[opp];
+    $('#youTitle').textContent = 'You';
+    setPrompt(state.connected[opp]
+      ? 'Both players are here. Start a round when you are ready.'
+      : `Waiting for your friend to join room ${state.code}.`, []);
+    return;
+  }
+
+  const myTurn = r.turn === me && !r.result;
+  const powerMine = r.pending && r.pending.owner === me;
+
+  $('#oppTitle').innerHTML = `${state.names[opp]} <span class="turn">${r.turn === opp && !r.result ? 'to play' : ''}</span>`;
+  $('#youTitle').innerHTML = `You <span class="turn">${myTurn ? 'to play' : ''}</span>`;
+  $('#oppZone').classList.toggle('active', r.turn === opp && !r.result);
+  $('#youZone').classList.toggle('active', myTurn);
+
+  // opponent line
+  $('#oppHand').innerHTML = '';
+  r.lines[opp].forEach(c => {
+    const click = powerMine ? () => send({ t:'power', seat: opp, uid: c.uid }) : null;
+    $('#oppHand').append(cardEl(c, { onClick: click }));
+  });
+
+  // your line
+  $('#youHand').innerHTML = '';
+  r.lines[me].forEach(c => {
+    let click = null, opts = {};
+    if (r.phase === 'peek' && !r.peekDone[me]) {
+      opts.sel = peekPicks.includes(c.uid);
+      click = () => {
+        const i = peekPicks.indexOf(c.uid);
+        if (i > -1) peekPicks.splice(i, 1);
+        else if (peekPicks.length < 2) peekPicks.push(c.uid);
+        render();
+      };
+    } else if (powerMine) {
+      click = () => send({ t:'power', seat: me, uid: c.uid });
+    } else if (slapArmed) {
+      click = () => { slapArmed = false; send({ t:'slap', uid: c.uid }); };
+      opts.sel = true;
+    } else if (myTurn && r.phase === 'drawn') {
+      click = () => send({ t:'place', uid: c.uid });
+      opts.pick = true;
+    }
+    $('#youHand').append(cardEl(c, { ...opts, onClick: click }));
+  });
+
+  // middle
+  $('#deckCount').textContent = `${r.deckCount} left`;
+  $('#deck').disabled = !(myTurn && r.phase === 'idle');
+  $('#deck').onclick = () => send({ t:'drawDeck' });
+
+  $('#discardWrap').innerHTML = '';
+  if (r.discardTop) {
+    const can = myTurn && r.phase === 'idle';
+    $('#discardWrap').append(cardEl(r.discardTop, { onClick: can ? () => send({ t:'takeDiscard' }) : null }));
+  } else {
+    const s = document.createElement('div'); s.className = 'slot'; s.textContent = 'empty';
+    $('#discardWrap').append(s);
+  }
+
+  $('#drawnWrap').innerHTML = '';
+  if (r.drawn) {
+    const lbl = document.createElement('span');
+    lbl.textContent = myTurn ? 'in hand' : 'in their hand';
+    $('#drawnWrap').append(cardEl(r.drawn.hidden ? {} : r.drawn), lbl);
+  }
+
+  renderPrompt(r, myTurn, powerMine);
+}
+
+function renderSetup() {
+  const el = $('#setup');
+  el.innerHTML = '';
+  const live = state.round && !state.round.result;
+  if (!live) {
+    const lab = document.createElement('label');
+    lab.textContent = 'Cards each';
+    lab.style.margin = '.6rem 0 0';
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 2; inp.max = 8; inp.value = state.cardsPerPlayer;
+    inp.onchange = () => send({ t:'setCards', n: inp.value });
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = state.roundNo ? 'Next round' : 'Start round';
+    btn.disabled = !state.connected[0] || !state.connected[1];
+    btn.onclick = () => { peekPicks = []; revealed.clear(); send({ t:'newRound' }); };
+    el.append(lab, inp, btn);
+    if (state.roundNo) {
+      const rs = document.createElement('button');
+      rs.className = 'btn'; rs.textContent = 'Reset match';
+      rs.onclick = () => send({ t:'resetMatch' });
+      el.append(rs);
+    }
+  }
+}
+
+function setPrompt(text, buttons) {
+  const p = $('#prompt');
+  p.innerHTML = '';
+  const el = document.createElement('p');
+  el.innerHTML = text;
+  p.append(el);
+  for (const b of buttons) {
+    const btn = document.createElement('button');
+    btn.className = 'btn ' + (b.kind || '');
+    btn.textContent = b.label;
+    btn.disabled = !!b.disabled;
+    btn.onclick = b.onClick;
+    p.append(btn);
+  }
+}
+
+function slapButton(r) {
+  const can = ['idle', 'drawn', 'dutch_offer'].includes(r.phase) && r.discardTop && !r.result;
+  return {
+    label: slapArmed ? 'Pick the card to throw' : 'Quick discard',
+    kind: slapArmed ? 'btn-armed' : '',
+    disabled: !can,
+    onClick: () => { slapArmed = !slapArmed; render(); }
+  };
+}
+
+function renderPrompt(r, myTurn, powerMine) {
+  if (r.result) {
+    const won = r.result.winner === me;
+    setPrompt(`<strong>${won ? 'You win the round.' : state.names[r.result.winner] + ' wins the round.'}</strong> ${r.result.reason}`, []);
+    return;
+  }
+  if (r.phase === 'peek') {
+    if (!r.peekDone[me]) {
+      setPrompt('Pick two of your cards to memorise.', [{
+        label: 'Look at them', kind: 'btn-primary',
+        disabled: peekPicks.length !== 2,
+        onClick: () => { send({ t:'peek', uids: peekPicks }); peekPicks = []; }
+      }]);
+    } else {
+      setPrompt('Remember them. Waiting for your friend to look at theirs.', []);
+    }
+    return;
+  }
+  if (r.phase === 'power') {
+    if (powerMine) {
+      const msg = r.pending.type === 'peek'
+        ? 'Your Jack. Click any card on the table to look at it.'
+        : (r.pending.picks === 0
+            ? 'Your Queen. Click the first card to swap.'
+            : 'Now click the second card. You will not see either of them.');
+      setPrompt(msg, []);
+    } else {
+      setPrompt(`${state.names[r.turn === me ? (me===0?1:0) : r.pending.owner]} is using a ${r.pending.type === 'peek' ? 'Jack' : 'Queen'}.`, []);
+    }
+    return;
+  }
+  if (r.phase === 'dutch_offer' && r.offerTo === me) {
+    setPrompt('End of your turn. Call Dutch only if you are sure you are lower, a tie goes to your opponent.', [
+      { label: 'Call Dutch', kind: 'btn-call', onClick: () => send({ t:'dutch' }) },
+      { label: 'Pass', kind: '', onClick: () => send({ t:'pass' }) },
+      slapButton(r)
+    ]);
+    return;
+  }
+  const dutch = r.dutchBy !== null
+    ? `<strong>Dutch called by ${r.dutchBy === me ? 'you' : state.names[r.dutchBy]}.</strong> Last turn. `
+    : '';
+  if (myTurn && r.phase === 'idle') {
+    setPrompt(dutch + 'Draw from the pile, or take the top discard and swap it in.', [slapButton(r)]);
+    return;
+  }
+  if (myTurn && r.phase === 'drawn') {
+    const canDump = r.drawnSource === 'deck';
+    setPrompt(dutch + 'Click one of your cards to swap this in, or throw it away.', [
+      { label: 'Throw it away', disabled: !canDump, onClick: () => send({ t:'discardDrawn' }) },
+      slapButton(r)
+    ]);
+    return;
+  }
+  setPrompt(dutch + `${state.names[r.turn]} is playing.`, [slapButton(r)]);
+}
+</script>
+</body>
+</html>
