@@ -188,6 +188,24 @@ header h1{font-family:var(--slab);font-weight:400;font-size:1.8rem;margin:0;colo
 .flip{animation:flip .42s ease both}
 @keyframes flip{0%{transform:rotateY(90deg)}100%{transform:rotateY(0)}}
 
+/* queen swap */
+.card.swapping{outline:3px solid var(--brass);outline-offset:3px;transform:translateY(-10px);z-index:5;
+  box-shadow:0 0 0 6px rgba(214,169,78,.25),0 18px 30px rgba(0,0,0,.45)}
+
+/* power announcement */
+#fxPop{
+  position:fixed;left:50%;top:38%;z-index:50;pointer-events:none;
+  display:flex;align-items:center;gap:1rem;padding:1rem 1.4rem 1rem 1rem;border-radius:16px;
+  background:var(--enamel);color:var(--paper);
+  box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 6px var(--enamel),inset 0 0 0 7px rgba(251,246,234,.35),0 24px 60px rgba(0,0,0,.55);
+  opacity:0;transform:translate(-50%,-50%) scale(.8);transition:opacity .2s ease,transform .25s cubic-bezier(.2,1.4,.4,1);
+}
+#fxPop.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#fxPop .card{--cw:58px;--ch:82px;flex:0 0 auto}
+#fxPop .card .val{display:none}
+#fxPop h4{font-family:var(--slab);font-weight:400;font-size:1.6rem;margin:0;line-height:1.05}
+#fxPop p{margin:.2rem 0 0;color:#C9D6E6;font-size:.95rem;max-width:230px}
+
 .slot{
   width:var(--cw);height:var(--ch);border-radius:9px;display:grid;place-items:center;
   border:1.5px dashed rgba(214,169,78,.35);color:var(--mute);font-size:.78rem;
@@ -323,6 +341,8 @@ aside h3{font-family:var(--slab);font-weight:400;font-size:1rem;color:var(--bras
   </aside>
 </section>
 
+<div id="fxPop" role="status" aria-live="polite"></div>
+
 <script>
 const $ = s => document.querySelector(s);
 const SUIT = { S:'\u2660', H:'\u2665', D:'\u2666', C:'\u2663', R:'\u2605', B:'\u2605' };
@@ -377,10 +397,75 @@ function onMessage(m) {
     render();
     return;
   }
-  if (m.type === 'state') {
-    if (m.roundNo !== lastRound) { dealt.clear(); lastRound = m.roundNo; }
-    state = m; render();
+  if (m.type === 'state' || m.type === 'fx') enqueue(m);
+}
+
+/* state and fx go through one queue, so a swap animation plays on the
+   old layout before the new positions are drawn */
+const queue = [];
+let pumping = false;
+function enqueue(m) { queue.push(m); pump(); }
+async function pump() {
+  if (pumping) return;
+  pumping = true;
+  while (queue.length) {
+    const m = queue.shift();
+    if (m.type === 'state') {
+      if (m.roundNo !== lastRound) { dealt.clear(); lastRound = m.roundNo; }
+      state = m; render();
+    } else if (m.kind === 'power') {
+      showPower(m);
+    } else if (m.kind === 'swap') {
+      await animateSwap(m);
+    }
   }
+  pumping = false;
+}
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+async function animateSwap(fx) {
+  const ea = document.querySelector(`.card[data-uid="${fx.a.uid}"]`);
+  const eb = document.querySelector(`.card[data-uid="${fx.b.uid}"]`);
+  if (!ea || !eb) return;
+  ea.classList.add('swapping'); eb.classList.add('swapping');
+  await wait(450);
+  if (!reduced) {
+    const ra = ea.getBoundingClientRect(), rb = eb.getBoundingClientRect();
+    const dx = rb.left - ra.left, dy = rb.top - ra.top;
+    for (const [el, x, y] of [[ea, dx, dy], [eb, -dx, -dy]]) {
+      el.style.transition = 'transform .7s cubic-bezier(.5,0,.2,1)';
+      el.style.transform = `translate(${x}px, ${y - 10}px)`;
+    }
+    await wait(750);
+  } else {
+    await wait(400);
+  }
+}
+
+let popTimer = null;
+function showPower(fx) {
+  if (!state) return;
+  const pop = $('#fxPop');
+  const mine = fx.by === me;
+  const who = mine ? 'You' : state.names[fx.by];
+  const whom = fx.victim === me ? 'you' : state.names[fx.victim];
+  const text = {
+    give: ['Extra card', `${who} ${mine ? 'give' : 'gives'} ${whom} a card from the pile.`],
+    peek: ['Jack', `${who} ${mine ? 'look' : 'looks'} at a card.`],
+    swap: ['Queen', `${who} ${mine ? 'swap' : 'swaps'} two cards, blind.`]
+  }[fx.power];
+  pop.innerHTML = '';
+  const body = document.createElement('div');
+  const h = document.createElement('h4'); h.textContent = text[0];
+  const p = document.createElement('p'); p.textContent = text[1];
+  body.append(h, p);
+  const { uid, ...face } = fx.card;
+  pop.append(cardEl(face), body);
+  pop.classList.add('show');
+  clearTimeout(popTimer);
+  popTimer = setTimeout(() => pop.classList.remove('show'), 2200);
 }
 
 const send = o => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
@@ -393,6 +478,7 @@ function cardEl(c, opts = {}) {
   const b = document.createElement('button');
   b.className = 'card';
   b.type = 'button';
+  if (c && c.uid) b.dataset.uid = c.uid;
   const face = c && c.rank ? c : revealed.get(c && c.uid);
 
   if (face && face.rank) {
@@ -431,6 +517,7 @@ function cardEl(c, opts = {}) {
   if (opts.sel) b.classList.add('sel');
   if (opts.target) b.classList.add('target');
   if (opts.lift) b.classList.add('lift');
+  if (opts.first) b.classList.add('swapping');
   if (opts.onClick) { b.classList.add('clickable'); b.onclick = opts.onClick; }
   else b.disabled = true;
   return b;
@@ -489,6 +576,7 @@ function render() {
 
   const myTurn = r.turn === me && !r.result;
   const powerMine = r.pending && r.pending.owner === me;
+  const firstPick = r.pending && r.pending.type === 'swap' ? r.pending.firstUid : null;
 
   title('#oppTitle', state.names[opp], r.turn === opp && !r.result);
   title('#youTitle', 'You', myTurn);
@@ -498,12 +586,12 @@ function render() {
   $('#oppHand').innerHTML = '';
   r.lines[opp].forEach(c => {
     const click = powerMine ? () => send({ t:'power', seat: opp, uid: c.uid }) : null;
-    $('#oppHand').append(cardEl(c, { onClick: click, target: !!powerMine, dealable: true }));
+    $('#oppHand').append(cardEl(c, { onClick: click, target: !!powerMine, dealable: true, first: c.uid === firstPick }));
   });
 
   $('#youHand').innerHTML = '';
   r.lines[me].forEach(c => {
-    let click = null; const opts = { dealable: true };
+    let click = null; const opts = { dealable: true, first: c.uid === firstPick };
     if (r.phase === 'peek' && !r.peekDone[me]) {
       opts.sel = peekPicks.includes(c.uid);
       click = () => {
@@ -632,7 +720,9 @@ function renderPrompt(r, myTurn, powerMine) {
             : '<strong>Queen.</strong> Now the second card. You will not see either.');
       setPrompt(msg, []);
     } else {
-      setPrompt(`${state.names[r.pending.owner]} is using a ${r.pending.type === 'peek' ? 'Jack' : 'Queen'}.`, []);
+      setPrompt(r.pending.type === 'swap' && r.pending.picks
+        ? `${state.names[r.pending.owner]} picked a first card to swap, choosing the second.`
+        : `${state.names[r.pending.owner]} is using a ${r.pending.type === 'peek' ? 'Jack' : 'Queen'}.`, []);
     }
     return;
   }
