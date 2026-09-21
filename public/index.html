@@ -199,6 +199,29 @@ header h1{font-family:var(--slab);font-weight:400;font-size:1.8rem;margin:0;colo
 .flip{animation:flip .42s ease both}
 @keyframes flip{0%{transform:rotateY(90deg)}100%{transform:rotateY(0)}}
 
+/* dutch call */
+#dutchPop{
+  position:fixed;left:50%;top:40%;z-index:55;pointer-events:none;text-align:center;
+  padding:1.2rem 2.4rem 1.1rem;border-radius:16px;color:var(--paper);
+  background:linear-gradient(180deg,#C8303A,#9C1A24);
+  box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 7px #9C1A24,inset 0 0 0 8px rgba(251,246,234,.4),0 8px 0 #5E0E15,0 30px 70px rgba(0,0,0,.6);
+  opacity:0;transform:translate(-50%,-50%) scale(1.6) rotate(-4deg);
+}
+#dutchPop h4{font-family:var(--slab);font-weight:400;font-size:3.4rem;line-height:1;margin:0;letter-spacing:.04em}
+#dutchPop p{margin:.45rem 0 0;font-size:1rem;color:#FBE3DF}
+#dutchPop.show{animation:slam .45s cubic-bezier(.2,1.5,.35,1) forwards}
+#dutchPop.hide{animation:fadeup .4s ease forwards}
+@keyframes slam{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(1.6) rotate(-4deg)}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-4deg)}
+}
+@keyframes fadeup{
+  from{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-4deg)}
+  to{opacity:0;transform:translate(-50%,-70%) scale(.95) rotate(-4deg)}
+}
+.table.jolt{animation:jolt .35s ease}
+@keyframes jolt{25%{transform:translate(-5px,3px)}50%{transform:translate(5px,-2px)}75%{transform:translate(-2px,1px)}}
+
 /* wrong quick discard */
 .card.flying{position:fixed;margin:0;z-index:60;pointer-events:none}
 .card.flying.hit{outline:3px solid #E05A61;outline-offset:2px}
@@ -372,6 +395,7 @@ aside h3{font-family:var(--slab);font-weight:400;font-size:1rem;color:var(--bras
 </section>
 
 <div id="fxPop" role="status" aria-live="polite"></div>
+<div id="dutchPop" role="status" aria-live="assertive"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -503,6 +527,8 @@ async function pump() {
       await animateSwap(m);
     } else if (m.kind === 'badslap') {
       await animateBadSlap(m);
+    } else if (m.kind === 'dutch') {
+      showDutch(m);
     }
   }
   pumping = false;
@@ -581,6 +607,29 @@ async function animateBadSlap(fx) {
   }
   fly.remove(); label.remove();
   src.style.visibility = '';
+}
+
+let dutchTimer = null;
+function showDutch(fx) {
+  if (!state) return;
+  const pop = $('#dutchPop');
+  const mine = fx.by === me;
+  pop.innerHTML = '';
+  const h = document.createElement('h4'); h.textContent = 'DUTCH !';
+  const p = document.createElement('p');
+  p.textContent = mine
+    ? `You called it. ${state.names[fx.by === 0 ? 1 : 0]} gets one last turn.`
+    : `${state.names[fx.by]} called it. One last turn for you.`;
+  pop.append(h, p);
+  pop.classList.remove('hide', 'show');
+  void pop.offsetWidth;
+  pop.classList.add('show');
+  if (!reduced) {
+    const t = $('.table');
+    t.classList.remove('jolt'); void t.offsetWidth; t.classList.add('jolt');
+  }
+  clearTimeout(dutchTimer);
+  dutchTimer = setTimeout(() => { pop.classList.remove('show'); pop.classList.add('hide'); }, 2800);
 }
 
 let popTimer = null;
