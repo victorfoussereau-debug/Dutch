@@ -69,13 +69,24 @@ button:disabled{cursor:default}
   box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 7px var(--enamel),inset 0 0 0 8px rgba(251,246,234,.35),0 24px 60px rgba(0,0,0,.5);
 }
 .wordmark{font-family:var(--slab);font-weight:400;font-size:4.2rem;line-height:1;margin:0;text-align:center;color:var(--paper)}
-.tag{text-align:center;margin:.4rem 0 1.6rem;color:#C9D6E6}
+.tag{text-align:center;margin:.5rem 0 1.4rem;color:#C9D6E6;min-height:3em;transition:opacity .35s ease}
+.tag.out{opacity:0}
 .plaque label{display:block;font-size:.85rem;margin:1rem 0 .3rem;color:#C9D6E6}
 .plaque input{
   width:100%;padding:.7rem .85rem;border-radius:8px;font:inherit;
   background:var(--paper);color:var(--ink);border:none;
 }
 #joinBtn{width:100%;margin-top:1.6rem;padding:.8rem;font-size:1.05rem}
+.alone{margin-top:1.6rem;padding-top:1.3rem;border-top:1px solid rgba(251,246,234,.25)}
+.alone p{margin:0 0 .6rem;text-align:center;color:#C9D6E6;font-size:.9rem}
+.levels{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem}
+.levels button{
+  padding:.5rem .2rem;border-radius:8px;font-weight:700;font-size:.88rem;
+  background:rgba(251,246,234,.1);color:var(--paper);border:1px solid rgba(251,246,234,.3);
+}
+.levels button:hover{background:rgba(251,246,234,.2)}
+.levels button[aria-pressed="true"]{background:var(--paper);color:var(--enamel);border-color:var(--paper)}
+#botBtn{width:100%;margin-top:.7rem;padding:.7rem}
 .err{color:#FFB3A8;min-height:1.4em;font-size:.88rem;margin:.7rem 0 0;text-align:center}
 
 /* ---------------- layout ---------------- */
@@ -188,6 +199,15 @@ header h1{font-family:var(--slab);font-weight:400;font-size:1.8rem;margin:0;colo
 .flip{animation:flip .42s ease both}
 @keyframes flip{0%{transform:rotateY(90deg)}100%{transform:rotateY(0)}}
 
+/* wrong quick discard */
+.card.flying{position:fixed;margin:0;z-index:60;pointer-events:none}
+.card.flying.hit{outline:3px solid #E05A61;outline-offset:2px}
+.nope{
+  position:fixed;z-index:61;pointer-events:none;font-family:var(--slab);font-size:1.1rem;
+  color:var(--paper);background:var(--red);padding:.15rem .6rem;border-radius:6px;
+  box-shadow:0 6px 16px rgba(0,0,0,.4);transform:translate(-50%,-50%) rotate(-8deg);
+}
+
 /* queen swap */
 .card.swapping{outline:3px solid var(--brass);outline-offset:3px;transform:translateY(-10px);z-index:5;
   box-shadow:0 0 0 6px rgba(214,169,78,.25),0 18px 30px rgba(0,0,0,.45)}
@@ -271,12 +291,22 @@ aside h3{font-family:var(--slab);font-weight:400;font-size:1rem;color:var(--bras
 <section id="join">
   <div class="plaque">
     <h1 class="wordmark">Dutch</h1>
-    <p class="tag">Two players, one room code.</p>
+    <p class="tag" id="tip" aria-live="polite">Two players, one room code.</p>
     <label for="name">Your name</label>
     <input id="name" maxlength="16" placeholder="Victor" autocomplete="off">
     <label for="code">Room code</label>
     <input id="code" maxlength="8" placeholder="LILLE" autocomplete="off">
     <button id="joinBtn" class="btn btn-primary">Take a seat</button>
+    <div class="alone">
+      <p>Or play against the bot</p>
+      <div class="levels" role="group" aria-label="Bot difficulty">
+        <button type="button" data-level="easy">Easy</button>
+        <button type="button" data-level="medium" aria-pressed="true">Medium</button>
+        <button type="button" data-level="hard">Hard</button>
+        <button type="button" data-level="ultimate">Ultimate</button>
+      </div>
+      <button id="botBtn" class="btn">Play the bot</button>
+    </div>
     <p class="err" id="joinErr"></p>
   </div>
 </section>
@@ -361,19 +391,73 @@ let slapArmed = false;
 
 $('#name').value = localStorage.getItem('dutch.name') || '';
 $('#code').value = localStorage.getItem('dutch.code') || '';
-$('#joinBtn').onclick = connect;
+$('#joinBtn').onclick = () => connect();
 $('#code').addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
 
-function connect() {
+const TIPS = [
+  'A red king is worth nothing. A black king is worth thirteen. Learn to tell them apart.',
+  'The joker is worth minus one, the only card that pays you to keep it.',
+  'Call Dutch only when you are sure. A tie goes against the caller.',
+  'Empty your line with quick discards and you win outright, whatever the totals.',
+  'A power only fires the first time that card reaches the discard pile in a round.',
+  'Cards taken from the discard pile are public. Watch what your opponent picks up.',
+  'A wrong quick discard costs you a card. Be sure before you throw.',
+  'The Queen is optional. Sometimes the best swap is no swap.',
+  'Spend your Jacks on your own unknown cards before spying on the other side.',
+  'Throw a 10 straight from the pile and your opponent eats an extra card.',
+  'Taking a card from the discard pile gives no power, but the card it replaces can.',
+  'The winner of a round plays first in the next one.',
+  'You always look at two cards at the start, however many you are dealt.',
+  'An ace is worth one. Low, but not as low as a red king.',
+  'Jacks and Queens are worth 11 and 12. Use their power, then get rid of them.',
+  'A Queen swaps blind. You do not get to see what you just gave away.',
+  'A swapped card keeps its value. Remember where your good cards travelled.',
+  'Quick discard works on your own cards only, and you can throw several in a row.',
+  'You can slap a card that matches your own discard. Plan your throws.',
+  'A quick discarded Jack or Queen still fires its power, if it is fresh.',
+  'When the draw pile runs out, the discards are reshuffled, but spent powers stay spent.',
+  'A longer line is not a death sentence. One good quick discard streak fixes it.',
+  'After a Dutch call, your opponent gets exactly one more turn. Make yours count.',
+  'Calling Dutch with unknown cards is a gamble. The bot on Ultimate never does it.',
+  'Watch which cards the Queen moves. Knowledge follows the card, not the slot.',
+  'A card thrown straight from the pile shows everyone what you drew.',
+  'If you forget a card, a Jack on your own line is never wasted.',
+  'The discard pile is the only card you see before choosing. Weigh it against the unknown.',
+  'Two players, one room code. Pick something your friend can spell.'
+];
+(function rotateTips() {
+  const el = $('#tip');
+  let i = Math.floor(Math.random() * TIPS.length);
+  el.textContent = TIPS[i];
+  setInterval(() => {
+    if ($('#join').style.display === 'none') return;
+    i = (i + 1) % TIPS.length;
+    el.classList.add('out');
+    setTimeout(() => { el.textContent = TIPS[i]; el.classList.remove('out'); }, 350);
+  }, 5000);
+})();
+
+let botLevel = localStorage.getItem('dutch.level') || 'medium';
+document.querySelectorAll('.levels button').forEach(btn => {
+  btn.setAttribute('aria-pressed', String(btn.dataset.level === botLevel));
+  btn.onclick = () => {
+    botLevel = btn.dataset.level;
+    localStorage.setItem('dutch.level', botLevel);
+    document.querySelectorAll('.levels button').forEach(x => x.setAttribute('aria-pressed', String(x === btn)));
+  };
+});
+$('#botBtn').onclick = () => connect(botLevel);
+
+function connect(bot) {
   const name = $('#name').value.trim() || 'Player';
   const code = $('#code').value.trim().toUpperCase();
-  if (!code) { $('#joinErr').textContent = 'Pick a room code and share it with your friend.'; return; }
+  if (!bot && !code) { $('#joinErr').textContent = 'Pick a room code and share it with your friend.'; return; }
   localStorage.setItem('dutch.name', name);
-  localStorage.setItem('dutch.code', code);
+  if (!bot) localStorage.setItem('dutch.code', code);
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => ws.send(JSON.stringify({ t:'join', code, name, token }));
+  ws.onopen = () => ws.send(JSON.stringify(bot ? { t:'join', name, token, bot } : { t:'join', code, name, token }));
   ws.onmessage = e => onMessage(JSON.parse(e.data));
   ws.onclose = () => { $('#joinErr').textContent = 'Connection lost. Reload to rejoin.'; };
   ws.onerror = () => { $('#joinErr').textContent = 'Could not reach the server.'; };
@@ -417,6 +501,8 @@ async function pump() {
       showPower(m);
     } else if (m.kind === 'swap') {
       await animateSwap(m);
+    } else if (m.kind === 'badslap') {
+      await animateBadSlap(m);
     }
   }
   pumping = false;
@@ -442,6 +528,59 @@ async function animateSwap(fx) {
   } else {
     await wait(400);
   }
+}
+
+async function animateBadSlap(fx) {
+  const src = document.querySelector(`.hand .card[data-uid="${fx.card.uid}"]`);
+  const pile = document.querySelector('#discardWrap .card, #discardWrap .slot');
+  if (!src || !pile) return;
+  const a = src.getBoundingClientRect(), b = pile.getBoundingClientRect();
+  const { uid, ...face } = fx.card;
+  const fly = cardEl(face);
+  fly.classList.add('flying');
+  Object.assign(fly.style, { left: a.left + 'px', top: a.top + 'px', width: a.width + 'px', height: a.height + 'px' });
+  document.body.append(fly);
+  src.style.visibility = 'hidden';
+
+  const label = document.createElement('div');
+  label.className = 'nope';
+  label.textContent = 'Wrong!';
+  Object.assign(label.style, { left: (b.left + b.width / 2) + 'px', top: (b.top - 14) + 'px', opacity: 0 });
+  document.body.append(label);
+
+  const dx = b.left - a.left, dy = b.top - a.top;
+  const T = reduced ? 1400 : 1500;
+  if (reduced) {
+    fly.style.transform = `translate(${dx}px, ${dy}px)`;
+    fly.classList.add('hit'); label.style.opacity = 1;
+    await wait(T);
+  } else {
+    const flight = fly.animate([
+      { transform: 'translate(0,0) rotate(0deg)', easing: 'cubic-bezier(.55,0,.9,.4)' },
+      { transform: `translate(${dx}px, ${dy}px) rotate(10deg) scale(1.06)`, offset: .3 },
+      { transform: `translate(${dx * .97}px, ${dy * .97 - 8}px) rotate(-7deg) scale(1.12)`, offset: .38 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(3deg) scale(1.08)`, offset: .52, easing: 'cubic-bezier(.15,1.7,.35,1)' },
+      { transform: 'translate(0,-6px) rotate(-14deg)', offset: .86 },
+      { transform: 'translate(0,0) rotate(0deg)' }
+    ], { duration: T, fill: 'forwards' });
+    setTimeout(() => {
+      fly.classList.add('hit');
+      pile.animate([
+        { transform: 'translateX(0)' }, { transform: 'translateX(-7px) rotate(-3deg)' },
+        { transform: 'translateX(6px) rotate(2deg)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }
+      ], { duration: 320 });
+      label.animate([
+        { opacity: 0, transform: 'translate(-50%,-50%) rotate(-8deg) scale(.4)' },
+        { opacity: 1, transform: 'translate(-50%,-50%) rotate(-8deg) scale(1.15)', offset: .35 },
+        { opacity: 1, transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', offset: .8 },
+        { opacity: 0, transform: 'translate(-50%,-80%) rotate(-8deg) scale(1)' }
+      ], { duration: 1300, fill: 'forwards' });
+    }, T * .3);
+    await flight.finished;
+    await wait(250);
+  }
+  fly.remove(); label.remove();
+  src.style.visibility = '';
 }
 
 let popTimer = null;
