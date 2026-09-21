@@ -73,6 +73,17 @@ function seatOf(room, token) {
 
 function other(seat) { return seat === 0 ? 1 : 0; }
 
+// Visual events sent to both players just before the next state update.
+function pushFx(room, fx) { (room.fx || (room.fx = [])).push(fx); }
+function flushFx(room) {
+  const list = room.fx || [];
+  room.fx = [];
+  for (const fx of list) for (let s = 0; s < 2; s++) {
+    const p = room.seats[s];
+    if (p && p.ws) send(p.ws, Object.assign({ type: 'fx' }, fx));
+  }
+}
+
 function pushLog(room, text) {
   room.log.push(text);
   if (room.log.length > 120) room.log.shift();
@@ -141,8 +152,10 @@ function discardCard(room, card, actor) {
       r.lines[victim].push(extra);
       pushLog(room, `${seatName(room, actor)} played a 10. ${seatName(room, victim)} takes an extra card.`);
     }
+    pushFx(room, { kind: 'power', power: 'give', by: actor, victim, card: publicCard(card) });
     return false;
   }
+  pushFx(room, { kind: 'power', power: p, by: actor, card: publicCard(card) });
   r.pending = { type: p, owner: actor, picks: [] };
   pushLog(room, `${seatName(room, actor)} played a ${card.rank === 'J' ? 'Jack' : 'Queen'}.`);
   return true;
@@ -236,7 +249,10 @@ function stateFor(room, seat) {
     dutchBy: r.dutchBy,
     peekDone: r.peekDone,
     lines: [0, 1].map(s => r.lines[s].map(c => showAll ? publicCard(c) : { uid: c.uid })),
-    pending: r.pending ? { type: r.pending.type, owner: r.pending.owner, picks: r.pending.picks.length } : null,
+    pending: r.pending ? {
+      type: r.pending.type, owner: r.pending.owner, picks: r.pending.picks.length,
+      firstUid: r.pending.picks[0] ? r.pending.picks[0].uid : null
+    } : null,
     drawn: (r.drawn && r.turn === seat) ? publicCard(r.drawn) : (r.drawn ? { hidden: true } : null),
     drawnSource: r.drawnSource,
     result: r.result
@@ -335,6 +351,7 @@ function handle(room, seat, msg) {
       r.spent.add(f.card.uid);
       const p = cardPower(f.card);
       if (p && fresh) {
+        pushFx(room, { kind: 'power', power: p, by: seat, victim: other(seat), card: publicCard(f.card) });
         if (p === 'give') {
           const extra = drawFromDeck(room);
           if (extra) {
@@ -383,6 +400,7 @@ function handle(room, seat, msg) {
       r.lines[a.seat][fa.index] = r.lines[tSeat][f.index];
       r.lines[tSeat][f.index] = tmp;
       pushLog(room, `${seatName(room, seat)} swapped two cards blind.`);
+      pushFx(room, { kind: 'swap', by: seat, a: { seat: a.seat, uid: a.uid }, b: { seat: tSeat, uid: f.card.uid } });
       r.pending = null;
       resumeAfterPower(room, seat, pend);
       return;
@@ -509,6 +527,7 @@ wss.on('connection', ws => {
     const room = ws.room;
     if (!room || ws.seat === undefined) return;
     try { handle(room, ws.seat, msg); } catch (e) { console.error(e); }
+    flushFx(room);
     broadcast(room);
   });
 
