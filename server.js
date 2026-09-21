@@ -467,6 +467,7 @@ function handle(room, seat, msg) {
     if (r.phase !== 'dutch_offer' || r.offerTo !== seat) return;
     r.dutchBy = seat;
     pushLog(room, `${seatName(room, seat)} called Dutch. One last turn.`);
+    pushFx(room, { kind: 'dutch', by: seat });
     nextTurn(room);
     return;
   }
