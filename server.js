@@ -395,6 +395,7 @@ function handle(room, seat, msg) {
 
     if (pend.type === 'peek') {
       reveal(room, seat, [{ seat: tSeat, uid: f.card.uid, card: publicCard(f.card) }], 7000);
+      pushFx(room, { kind: 'peekat', by: seat, seat: tSeat, uid: f.card.uid });
       pushLog(room, `${seatName(room, seat)} looked at a card of ${seatName(room, tSeat)}.`);
       r.pending = null;
       resumeAfterPower(room, seat, pend);
